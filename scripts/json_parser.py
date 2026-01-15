@@ -28,6 +28,19 @@ def get_values(data, feature_names):
     return results
 
 
+def get_levels(data):
+    levels = {}
+
+    for component_name, component in data.items():
+        level = component["evo"]["Levels"] if "evo" in component else None
+        if level is None:
+            print(f"'levels' not found in component '{component_name}'.")
+        levels[component_name] = level
+
+    return levels
+
+
+
 # Save feature values to a CSV file
 def save_features_to_file(values, output_file, header):
     
@@ -66,9 +79,12 @@ def main():
     data = load_json(json_file)
     
     feature_names = ["cells", "seed", "mae", "wce", "wcre%"]
-    header = ["Name"] + feature_names
+    header = ["Name"] + feature_names + ["Levels"]
 
     values = get_values(data, feature_names)
+    levels = get_levels(data)
+    for component in values:
+        values[component].append(levels.get(component, "N/A"))
     
     save_features_to_file(values, output_file, header)
 

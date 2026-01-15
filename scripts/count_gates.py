@@ -8,7 +8,7 @@ GATE_PATTERN = re.compile(r"\(\[(\d+)\](\d+),(\d+),(\d+)\)")
 OUTPUTS_PATTERN = re.compile(r"\((-?\d{1,3}(?:,-?\d{1,3})*)\)$")  
 
 FUNCTION_MAP = {
-    0: "NONE",
+    0: "IDA",
     1: "INVA",
     2: "AND2",
     3: "OR2",
@@ -30,6 +30,19 @@ AREA_MAP = {
 }     
 
 
+WEIGHTS = {
+        0: 0,  # IDA
+        1: 1,  # INVA
+        2: 1,  # AND2
+        3: 1,  # OR2
+        4: 1,  # XOR2
+        5: 1,  # NAND2
+        6: 1,  # NOR2
+        7: 1   # XNOR2
+    }
+        
+
+
 def count_used_gates(gates, output_gates):
     used = set()
     stack = [(g, False) for g in output_gates if g >= 0]  # (node, visited_flag)
@@ -37,7 +50,7 @@ def count_used_gates(gates, output_gates):
     while stack:
         current, visited_flag = stack.pop()
 
-        if current in (None, -1, 0):
+        if current in (None, -1):
             continue
         if current not in gates:
             continue
@@ -50,12 +63,19 @@ def count_used_gates(gates, output_gates):
         # Push the node back with visited_flag=True to process after inputs
         stack.append((current, True))
 
-        in_1, in_2, _ = gates[current]
-        for inp in (in_1, in_2):
-            if inp in gates and inp not in used:
-                stack.append((inp, False))
+        in_1, in_2, fun = gates[current]
+        if fun == 0 or fun == 1:
+            if in_1 in gates and in_1 not in used:
+                stack.append((in_1, False))
+        else:
+            for inp in (in_1, in_2):
+                if inp in gates and inp not in used:
+                    stack.append((inp, False))
     
     return used
+
+
+
 
 
 def calculate_all_rows(input_folder):
@@ -76,6 +96,8 @@ def calculate_all_rows(input_folder):
                 all_rows.append(row)
             else:
                 print(f"File could not be processed: {file_path}")
+    
+    print(len(all_rows))
 
     return all_rows
 
@@ -129,12 +151,44 @@ def process_chr_file(chr_file):
 
     # Count used gates
     used = count_used_gates(gates, output_gates)
-
+    
 
     # Count number of each function ID
     used_function_ids = [gates[gate_id][2] for gate_id in used]
     gates_counts = Counter(used_function_ids)
     total_used_gates = len(used)
+
+
+    # Calculate longest path
+    max_id = max(max(gates.keys()), max(output_gates))
+    delay = [1] * (max_id + 1)
+
+    sorted_used = sorted(used)
+
+    for gate_id in sorted_used:
+        in_1, in_2, func_id = gates[gate_id]
+        
+        d1 = delay[in_1]
+        
+        if func_id > 1:  # Binary gates (AND, OR, XOR...)
+            d2 = delay[in_2]
+            # Max of inputs + gate weight
+            delay[gate_id] = max(d1, d2) + WEIGHTS[func_id]
+        else:           # Unary gates (IDA, INVA)
+            # Only first input matters
+            delay[gate_id] = d1 + WEIGHTS[func_id]
+
+    po_delays = [delay[po_index] + 1 for po_index in output_gates]
+    longest_path_value = max(po_delays) if po_delays else 0
+
+
+    # For gates NOR, XNOR, NAND inlcude inverter into total gates count
+    for fid in [5, 6, 7]:  # NAND2, NOR2, XNOR2
+        if fid in gates_counts:
+            gates_counts[1] += gates_counts[fid]  # Add to INVA count
+            total_used_gates += gates_counts[fid]  # Increase total used gates
+
+    
 
     # Calculate total area
     total_area = 0.0
@@ -159,6 +213,7 @@ def process_chr_file(chr_file):
         
 
     # Add total area (formatted to 4 decimal places)
+    row.append(longest_path_value)
     row.append(f"{total_area:.4f}")
 
 
@@ -171,7 +226,7 @@ def write_output_file(data_rows, output_file):
         with open(output_file, 'w', newline='', encoding='utf-8') as outfile:
             writer = csv.writer(outfile)
             
-            HEADER = ["NAME", "ALL_GATES", "USED_GATES"] + [name for name in FUNCTION_MAP.values()] + ["TOTAL_AREA"]
+            HEADER = ["NAME", "ALL_GATES", "USED_GATES"] + [name for name in FUNCTION_MAP.values()] + ["LONGEST PATH", "TOTAL_AREA"]
             writer.writerow(HEADER) 
             
             writer.writerows(data_rows)
