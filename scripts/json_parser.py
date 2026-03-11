@@ -78,13 +78,13 @@ def main():
 
     data = load_json(json_file)
     
-    feature_names = ["cells", "seed", "mae", "wce", "wcre%"]
+    feature_names = ["cells", "seed", "mae", "wce", "wcre%", "pdk45_area", "pdk45_delay", "pdk45_pwr"]
     header = ["Name"] + feature_names + ["Levels"]
 
     values = get_values(data, feature_names)
     levels = get_levels(data)
     for component in values:
-        values[component].append(levels.get(component, "N/A"))
+        values[component].append(levels.get(component, "N/A")) 
     
     save_features_to_file(values, output_file, header)
 
