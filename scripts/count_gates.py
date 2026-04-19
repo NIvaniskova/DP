@@ -1,7 +1,7 @@
 import os
 import re
 import csv
-from collections import Counter
+from collections import Counter, defaultdict
 import argparse
 
 GATE_PATTERN = re.compile(r"\(\[(\d+)\](\d+),(\d+),(\d+)\)")
@@ -72,6 +72,8 @@ def count_used_gates(gates, output_gates):
                 if inp in gates and inp not in used:
                     stack.append((inp, False))
     
+    print(used)
+    
     return used
 
 
@@ -97,7 +99,7 @@ def calculate_all_rows(input_folder):
             else:
                 print(f"File could not be processed: {file_path}")
     
-    print(len(all_rows))
+    #print(len(all_rows))
 
     return all_rows
 
@@ -188,14 +190,42 @@ def process_chr_file(chr_file):
             gates_counts[1] += gates_counts[fid]  # Add to INVA count
             total_used_gates += gates_counts[fid]  # Increase total used gates
 
-    
-
     # Calculate total area
     total_area = 0.0
     for fid, count in gates_counts.items():
         gate_name = FUNCTION_MAP.get(fid, None)
         if gate_name and gate_name in AREA_MAP:
             total_area += AREA_MAP[gate_name] * count
+
+    # Calculate sharing factor
+    gates_influence = defaultdict(set)
+    for po_index, gate_id in enumerate(output_gates):
+        for used_gate in used:
+            if used_gate == gate_id:
+                gates_influence[used_gate].add(po_index)
+            else:   
+                stack = [gate_id]
+                visited = set()
+                while stack:
+                    current = stack.pop()
+                    if current in visited:
+                        continue
+                    visited.add(current)
+                    if current == used_gate:
+                        gates_influence[used_gate].add(po_index)
+                        break
+                    if current in gates:
+                        in_1, in_2, _ = gates[current]
+                        if in_1 >= 0:
+                            stack.append(in_1)
+                        if in_2 >= 0:
+                            stack.append(in_2)
+    
+    sf = 0
+    for gate_id in sorted(gates_influence):
+        sf += len(gates_influence[gate_id])
+    sf = sf / total_used_gates if total_used_gates > 0 else 0
+    
 
     # Prepare row data
     row = []
@@ -215,6 +245,7 @@ def process_chr_file(chr_file):
     # Add total area (formatted to 4 decimal places)
     row.append(longest_path_value)
     row.append(f"{total_area:.4f}")
+    row.append(f"{sf:.4f}")
 
 
     return row
@@ -226,7 +257,7 @@ def write_output_file(data_rows, output_file):
         with open(output_file, 'w', newline='', encoding='utf-8') as outfile:
             writer = csv.writer(outfile)
             
-            HEADER = ["NAME", "ALL_GATES", "USED_GATES"] + [name for name in FUNCTION_MAP.values()] + ["LONGEST PATH", "TOTAL_AREA"]
+            HEADER = ["NAME", "ALL_GATES", "USED_GATES"] + [name for name in FUNCTION_MAP.values()] + ["LONGEST PATH", "TOTAL_AREA", "SHARING_FACTOR"]
             writer.writerow(HEADER) 
             
             writer.writerows(data_rows)
